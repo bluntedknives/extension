@@ -9,6 +9,7 @@ export const defaultSettings = {
   provider: "local",
   endpoint: "http://127.0.0.1:11434/v1/chat/completions",
   model: "qwen2.5-coder:7b",
+  apiKeys: {},
   approvalRequired: true,
   dangerMode: false,
   persistentPrompt:

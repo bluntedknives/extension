@@ -1,83 +1,58 @@
-# OSI CLI (JavaScript)
+# OSI CLI (TUI)
 
-OSI is now a Node.js CLI, so you can install once and run `osi` from any directory without Python virtualenv activation.
-The runtime has no third-party package requirements beyond Node.js itself.
+OSI now uses a compact terminal UI with dropdown-style selectors inspired by modern coding CLIs.
 
 ## Install
-
-### One command (recommended)
 
 ```bash
 bash install_osi.sh
 ```
 
-### Manual global install
+or:
 
 ```bash
 npm install -g .
 ```
 
-Then run from anywhere:
+Run from any folder:
 
 ```bash
 osi
 ```
 
-If global installs are blocked by your environment, use:
+## UI features
 
-```bash
-npm install
-npm start
-```
+- Compact branded header and focused prompt line.
+- Dropdown-style command menu via `/menu`.
+- Dropdown-style provider selector via `/provider`.
+- Status/tips header with active provider/model/modes.
+- Planned command preview when assistant responds with shell code blocks.
 
-## Features
+## Provider key setup
 
-- Interactive terminal assistant for coding tasks.
-- Compact Codex/Gemini-style UI sized for smaller terminals.
-- Providers: `local`, `codex`, `groq`, `gemini`, `v0`.
-- Persistent config in `~/.osi/config.json`.
-- Prompt customization with `/prompt` and `/prompt set`.
-- Rate-limit/quota/auth detection for hosted providers.
-- Shell command execution with approval and danger modes.
-- Repo summarization context for codebase-aware responses.
-- Suggested command preview extracted from assistant responses.
-- Image path attachments using `/image <path>` to include visual context.
+When you switch to a hosted provider (`codex`, `groq`, `gemini`, `v0`), OSI prompts for the API key and stores it in:
+
+- `~/.osi/config.json`
+
+You can also run:
+
+- `/set-api-key`
 
 ## Commands
 
 - `/help`
-- `/provider <local|codex|groq|gemini|v0>`
-- `/model <name>`
-- `/endpoint <url>`
-- `/prompt`
-- `/prompt set <text>`
-- `/approve on|off`
-- `/danger on|off`
+- `/provider`
+- `/set-api-key`
 - `/codebase`
 - `/history`
-- `/paste` (multiline paste mode, end with `.`)
+- `/paste`
 - `/image <path>`
 - `/exec <cmd>`
-- `/install`
+- `/clear`
 - `/exit`
 
-Also available:
+## Keybinds
 
-```bash
-osi install
-```
-
-## Provider keys
-
-- `OPENAI_API_KEY` for `codex`
-- `GROQ_API_KEY` for `groq`
-- `GEMINI_API_KEY` for `gemini`
-- `V0_API_KEY` for `v0`
-
-`local` typically uses Ollama/OpenAI-compatible local endpoints and does not require API keys.
-
-## Keybinds & tips
-
-- `Ctrl+C`: exit OSI
-- `Ctrl+Z`: intercepted (shows reminder; use `/exit`)
-- `Ctrl+V`: native terminal paste support
+- `Ctrl+C` exit
+- `Ctrl+V` native paste support
+- `Ctrl+Z` request cancel

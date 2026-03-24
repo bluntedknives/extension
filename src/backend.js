@@ -39,9 +39,10 @@ export class ModelClient {
     this.apiKey = apiKey;
   }
 
-  static fromSettings({ provider, endpoint, model }) {
+  static fromSettings({ provider, endpoint, model, apiKeys = {} }) {
     const providerConfig = PROVIDERS[provider] || PROVIDERS.local;
-    const apiKey = providerConfig.apiKeyEnv ? process.env[providerConfig.apiKeyEnv] : null;
+    const apiKey =
+      apiKeys[provider] || (providerConfig.apiKeyEnv ? process.env[providerConfig.apiKeyEnv] : null);
     return new ModelClient({ provider, endpoint, model, apiKey });
   }
 

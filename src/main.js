@@ -22,340 +22,337 @@ const colors = {
   red: "\x1b[31m",
   green: "\x1b[32m",
   yellow: "\x1b[33m",
-  cyan: "\x1b[36m",
+  blue: "\x1b[34m",
   magenta: "\x1b[35m",
+  cyan: "\x1b[36m",
   white: "\x1b[37m"
 };
 
-function color(text, colorName) {
-  return `${colors[colorName]}${text}${colors.reset}`;
+const menuItems = [
+  "/help",
+  "/provider",
+  "/set-api-key",
+  "/model",
+  "/endpoint",
+  "/codebase",
+  "/history",
+  "/paste",
+  "/image",
+  "/exec",
+  "/toggle-approvals",
+  "/toggle-danger",
+  "/clear",
+  "/exit"
+];
+
+function color(text, tone) {
+  return `${colors[tone]}${text}${colors.reset}`;
 }
 
-function gradientLine(text) {
-  const palette = ["magenta", "magenta", "white", "white"];
-  return text
-    .split("")
-    .map((char, index) => color(char, palette[index % palette.length]))
-    .join("");
-}
-
-function startSpinner(label) {
-  const frames = ["-", "\\", "|", "/"];
-  let index = 0;
-  const timer = setInterval(() => {
-    process.stdout.write(`\r${frames[index % frames.length]} ${label}`);
-    index += 1;
-  }, 90);
-  return {
-    succeed(doneLabel = "Done") {
-      clearInterval(timer);
-      process.stdout.write(`\r${color(`✓ ${doneLabel}`, "green")}\n`);
-    },
-    fail(doneLabel = "Failed") {
-      clearInterval(timer);
-      process.stdout.write(`\r${color(`✗ ${doneLabel}`, "red")}\n`);
-    },
-    stop() {
-      clearInterval(timer);
-      process.stdout.write("\r");
-    }
-  };
-}
-
-function printSession(settings) {
-  console.log(gradientLine(BANNER));
-  console.log(color("osi cli • compact mode", "cyan"));
+function printHeader(settings) {
+  console.clear();
+  console.log(color(logo, "magenta"));
   console.log(
-    `${color("provider", "magenta")}:${settings.provider}  ` +
-      `${color("model", "magenta")}:${settings.model}  ` +
-      `${color("approvals", "magenta")}:${settings.approvalRequired ? "on" : "off"}  ` +
-      `${color("danger", "magenta")}:${settings.dangerMode ? "on" : "off"}`
+    `${color("provider", "blue")}:${settings.provider} ` +
+      `${color("model", "blue")}:${settings.model} ` +
+      `${color("approvals", "blue")}:${settings.approvalRequired ? "on" : "off"} ` +
+      `${color("danger", "blue")}:${settings.dangerMode ? "on" : "off"}`
   );
+  console.log(color("Tips: /menu opens command dropdown • /provider opens provider dropdown", "cyan"));
+  console.log(color("Keybind style: Ctrl+C exit, Ctrl+V native paste, Ctrl+Z stop current request", "cyan"));
+  console.log(color("─".repeat(Math.min(process.stdout.columns || 80, 96)), "white"));
 }
 
-function printHelp() {
-  console.log(color("\nOSI Commands", "magenta"));
-  console.log("  /help");
-  console.log("  /provider <local|codex|groq|gemini|v0>");
-  console.log("  /model <name>");
-  console.log("  /endpoint <url>");
-  console.log("  /prompt");
-  console.log("  /prompt set <text>");
-  console.log("  /approve on|off");
-  console.log("  /danger on|off");
-  console.log("  /codebase");
-  console.log("  /history");
-  console.log("  /paste");
-  console.log("  /image <path>");
-  console.log("  /exec <cmd>");
-  console.log("  /install");
-  console.log("  /exit");
+function providerKeyName(provider) {
+  if (provider === "codex") return "OPENAI_API_KEY";
+  if (provider === "groq") return "GROQ_API_KEY";
+  if (provider === "gemini") return "GEMINI_API_KEY";
+  if (provider === "v0") return "V0_API_KEY";
+  return "";
 }
 
-function showInstall() {
-  console.log(color("\nInstall OSI", "green"));
-  console.log("  npm install -g .");
-  console.log("  osi");
-}
-
-async function confirmPrompt(reader, promptText) {
-  const answer = (await reader.question(`${promptText} [y/N] `)).trim().toLowerCase();
-  return answer === "y" || answer === "yes";
-}
-
-async function askModel(settings, userText, repoSummary) {
-  const spinner = startSpinner("Thinking...");
-  try {
-    const client = ModelClient.fromSettings(settings);
-    const answer = await client.chat([
-      { role: "system", content: settings.persistentPrompt },
-      {
-        role: "system",
-        content:
-          "You are connected to OSI CLI. When useful, suggest shell commands and precise file edits.\n\n" +
-          `Current repo context:\n${repoSummary}`
-      },
-      { role: "user", content: userText }
-    ]);
-    spinner.succeed("Done");
-    return answer;
-  } catch (error) {
-    spinner.fail("Request failed");
-    throw error;
+async function chooseFromList(reader, title, options) {
+  console.log(color(`\n${title}`, "magenta"));
+  options.forEach((option, index) => console.log(`  ${index + 1}. ${option}`));
+  const raw = (await reader.question(color("select number> ", "blue"))).trim();
+  const index = Number(raw) - 1;
+  if (!Number.isInteger(index) || index < 0 || index >= options.length) {
+    return "";
   }
+  return options[index];
 }
 
-function renderTips() {
-  const tips =
-    `${color("tips", "magenta")}  ` +
-    "Ctrl+C exit  •  Ctrl+Z blocked  •  native Ctrl+V paste  •  /paste multiline  •  /image path";
-  console.log(color("─".repeat(Math.min(process.stdout.columns || 80, 80)), "white"));
-  console.log(color(tips, "cyan"));
+async function ensureApiKey(reader, settings) {
+  if (settings.provider === "local") return true;
+  if (settings.apiKeys[settings.provider]) return true;
+  const envName = providerKeyName(settings.provider);
+  const value = (
+    await reader.question(color(`Missing ${envName}. Paste key now (or blank to cancel)> `, "yellow"))
+  ).trim();
+  if (!value) {
+    console.log(color("No API key set.", "red"));
+    return false;
+  }
+  settings.apiKeys[settings.provider] = value;
+  saveSettings(settings);
+  console.log(color(`Saved key for ${settings.provider}.`, "green"));
+  return true;
 }
 
 function extractSuggestedCommands(text) {
-  const matches = text.match(/```(?:bash|sh)?\n([\s\S]*?)```/g) || [];
-  return matches
+  const blocks = text.match(/```(?:bash|sh)?\n([\s\S]*?)```/g) || [];
+  return blocks
     .map((block) => block.replace(/```(?:bash|sh)?\n?/g, "").replace(/```/g, "").trim())
     .filter(Boolean)
     .flatMap((chunk) => chunk.split("\n").map((line) => line.trim()).filter(Boolean))
-    .slice(0, 5);
+    .slice(0, 6);
 }
 
-async function captureMultiline(reader) {
-  console.log(color("Paste mode: end with a single '.' line", "yellow"));
-  const lines = [];
-  while (true) {
-    const line = await reader.question("");
-    if (line.trim() === ".") {
-      break;
-    }
-    lines.push(line);
-  }
-  return lines.join("\n");
+async function runModelQuery(settings, userText, repoSummary, imagePaths) {
+  const client = ModelClient.fromSettings(settings);
+  const imageContext =
+    imagePaths.length > 0 ? `\n\nAttached image paths:\n${imagePaths.map((item) => `- ${item}`).join("\n")}` : "";
+  const answer = await client.chat([
+    { role: "system", content: settings.persistentPrompt },
+    {
+      role: "system",
+      content:
+        "You are connected to OSI CLI. Keep output concise, safe, and command-aware.\n\n" +
+        `Repo context:\n${repoSummary}`
+    },
+    { role: "user", content: `${userText}${imageContext}` }
+  ]);
+  return answer;
 }
 
-async function handleExec(reader, settings, command) {
-  if (!settings.dangerMode && settings.approvalRequired) {
-    const ok = await confirmPrompt(reader, `Execute command? ${command}`);
-    if (!ok) {
-      console.log(color("Cancelled.", "yellow"));
-      return;
-    }
+export async function run() {
+  const mode = process.argv[2] || "chat";
+  if (mode === "install") {
+    console.log("Install OSI:\n  npm install -g .\n  osi");
+    return;
   }
-  const spinner = startSpinner("Running shell command...");
-  const result = await executeShell(command);
-  spinner.stop();
-  if (result.code === 0) {
-    console.log(color(`exit=${result.code}`, "green"));
-  } else {
-    console.log(color(`exit=${result.code}`, "red"));
-  }
-  if (result.output) {
-    console.log(result.output);
-  }
-}
 
-async function runChat() {
   const reader = readline.createInterface({ input, output });
   const settings = loadSettings();
-  let repoSummary = summarizeRepo(process.cwd());
   const history = [];
   const imagePaths = [];
+  let repoSummary = summarizeRepo(process.cwd());
+  let abortRequested = false;
 
   process.on("SIGTSTP", () => {
-    console.log(color("\nCtrl+Z intercepted. Use /exit to quit OSI.", "yellow"));
-    renderTips();
+    abortRequested = true;
+    console.log(color("\nAbort requested. Request will be skipped before send.", "yellow"));
   });
 
-  printSession(settings);
-  printHelp();
-  renderTips();
+  printHeader(settings);
 
   while (true) {
-    const text = (await reader.question(color("\nosi> ", "cyan"))).trim();
-    if (!text) {
+    const text = (await reader.question(color("\nosi> ", "blue"))).trim();
+    if (!text) continue;
+
+    if (text === "/exit") break;
+    if (text === "/clear") {
+      printHeader(settings);
       continue;
-    }
-    if (text === "/exit") {
-      break;
     }
     if (text === "/help") {
-      printHelp();
-      renderTips();
+      console.log(`Commands: ${menuItems.join(", ")}`);
       continue;
     }
-    if (text === "/history") {
-      const recent = history.slice(-12);
-      if (recent.length === 0) {
-        console.log(color("No history yet.", "yellow"));
-      } else {
-        for (const entry of recent) {
-          console.log(`${color(`[${entry.role}]`, "magenta")} ${entry.text}`);
+    if (text === "/menu") {
+      const picked = await chooseFromList(reader, "Command menu", menuItems);
+      if (!picked) continue;
+      if (picked === "/exit") break;
+      if (picked === "/clear") {
+        printHeader(settings);
+        continue;
+      }
+      if (picked === "/provider") {
+        const providers = Object.keys(PROVIDERS);
+        const choice = await chooseFromList(reader, "Provider dropdown", providers);
+        if (!choice) continue;
+        settings.provider = choice;
+        settings.endpoint = PROVIDERS[choice].endpoint;
+        saveSettings(settings);
+        await ensureApiKey(reader, settings);
+        console.log(color(`Provider switched to ${choice}.`, "green"));
+        printHeader(settings);
+        continue;
+      }
+      if (picked === "/set-api-key") {
+        await ensureApiKey(reader, settings);
+        continue;
+      }
+      if (picked === "/toggle-approvals") {
+        settings.approvalRequired = !settings.approvalRequired;
+        saveSettings(settings);
+        printHeader(settings);
+        continue;
+      }
+      if (picked === "/toggle-danger") {
+        settings.dangerMode = !settings.dangerMode;
+        saveSettings(settings);
+        printHeader(settings);
+        continue;
+      }
+      if (picked === "/codebase") {
+        repoSummary = summarizeRepo(process.cwd());
+        console.log(repoSummary);
+        continue;
+      }
+      if (picked === "/history") {
+        for (const item of history.slice(-12)) {
+          console.log(`${color(`[${item.role}]`, "magenta")} ${item.text}`);
         }
-      }
-      renderTips();
-      continue;
-    }
-    if (text === "/paste") {
-      const pasted = await captureMultiline(reader);
-      if (!pasted) {
-        console.log(color("No pasted content captured.", "yellow"));
-        renderTips();
         continue;
       }
-      history.push({ role: "user", text: pasted.slice(0, 240) });
-      const answer = await askModel(settings, pasted, repoSummary);
-      history.push({ role: "assistant", text: answer.slice(0, 240) });
-      console.log(color("\nassistant", "magenta"));
-      console.log(answer);
-      renderTips();
-      continue;
-    }
-    if (text.startsWith("/image ")) {
-      const imagePath = text.replace("/image ", "").trim();
-      if (!fs.existsSync(imagePath)) {
-        console.log(color(`Image path not found: ${imagePath}`, "red"));
-      } else {
-        imagePaths.push(imagePath);
-        console.log(color(`Attached image path: ${imagePath}`, "green"));
-      }
-      renderTips();
-      continue;
-    }
-    if (text.startsWith("/provider ")) {
-      const provider = text.split(" ", 2)[1]?.trim().toLowerCase();
-      if (!PROVIDERS[provider]) {
-        console.log(color(`Unknown provider: ${provider}`, "red"));
+      if (picked === "/paste") {
+        const pasted = (await reader.question(color("Paste text> ", "blue"))).trim();
+        if (!pasted) continue;
+        history.push({ role: "user", text: pasted.slice(0, 300) });
+        try {
+          if (!(await ensureApiKey(reader, settings))) continue;
+          const answer = await runModelQuery(settings, pasted, repoSummary, imagePaths);
+          history.push({ role: "assistant", text: answer.slice(0, 300) });
+          console.log(color("assistant:", "cyan"), answer);
+        } catch (error) {
+          console.log(color(error.message, "red"));
+        }
         continue;
       }
+      if (picked === "/image") {
+        const path = (await reader.question(color("Image path> ", "blue"))).trim();
+        if (path && fs.existsSync(path)) {
+          imagePaths.push(path);
+          console.log(color(`Attached: ${path}`, "green"));
+        } else {
+          console.log(color("Image not found.", "red"));
+        }
+        continue;
+      }
+      if (picked === "/exec") {
+        const cmd = (await reader.question(color("Command> ", "blue"))).trim();
+        if (!cmd) continue;
+        if (!settings.dangerMode && settings.approvalRequired) {
+          const allow = (await reader.question(color(`Run "${cmd}"? type yes> `, "yellow"))).trim();
+          if (allow.toLowerCase() !== "yes") {
+            console.log(color("Cancelled.", "yellow"));
+            continue;
+          }
+        }
+        console.log(color(`running: ${cmd}`, "yellow"));
+        const result = await executeShell(cmd);
+        console.log(result.code === 0 ? color(`exit=${result.code}`, "green") : color(`exit=${result.code}`, "red"));
+        if (result.output) console.log(result.output);
+        continue;
+      }
+      continue;
+    }
+    if (text === "/provider") {
+      const provider = await chooseFromList(reader, "Provider dropdown", Object.keys(PROVIDERS));
+      if (!provider) continue;
       settings.provider = provider;
       settings.endpoint = PROVIDERS[provider].endpoint;
       saveSettings(settings);
-      console.log(color(`Provider set to ${provider}. Endpoint reset.`, "green"));
-      renderTips();
+      await ensureApiKey(reader, settings);
+      printHeader(settings);
+      continue;
+    }
+    if (text === "/set-api-key") {
+      await ensureApiKey(reader, settings);
       continue;
     }
     if (text.startsWith("/model ")) {
-      settings.model = text.split(" ", 2)[1]?.trim();
+      settings.model = text.replace("/model ", "").trim();
       saveSettings(settings);
-      console.log(color(`Model set to ${settings.model}`, "green"));
-      renderTips();
+      printHeader(settings);
       continue;
     }
     if (text.startsWith("/endpoint ")) {
-      settings.endpoint = text.split(" ", 2)[1]?.trim();
+      settings.endpoint = text.replace("/endpoint ", "").trim();
       saveSettings(settings);
-      console.log(color(`Endpoint set to ${settings.endpoint}`, "green"));
-      renderTips();
-      continue;
-    }
-    if (text === "/prompt") {
-      console.log(settings.persistentPrompt);
-      renderTips();
-      continue;
-    }
-    if (text.startsWith("/prompt set ")) {
-      settings.persistentPrompt = text.replace("/prompt set ", "").trim();
-      saveSettings(settings);
-      console.log(color("Prompt updated.", "green"));
-      renderTips();
-      continue;
-    }
-    if (text.startsWith("/approve ")) {
-      const value = text.split(" ", 2)[1]?.trim().toLowerCase();
-      settings.approvalRequired = value === "on";
-      saveSettings(settings);
-      console.log(color(`Approval mode: ${value}`, "green"));
-      renderTips();
-      continue;
-    }
-    if (text.startsWith("/danger ")) {
-      const value = text.split(" ", 2)[1]?.trim().toLowerCase();
-      settings.dangerMode = value === "on";
-      saveSettings(settings);
-      console.log(color(`Danger mode: ${value}`, "yellow"));
-      renderTips();
+      printHeader(settings);
       continue;
     }
     if (text === "/codebase") {
-      const spinner = startSpinner("Scanning codebase...");
       repoSummary = summarizeRepo(process.cwd());
-      spinner.succeed("Done");
       console.log(repoSummary);
-      renderTips();
+      continue;
+    }
+    if (text === "/history") {
+      for (const item of history.slice(-12)) {
+        console.log(`${color(`[${item.role}]`, "magenta")} ${item.text}`);
+      }
+      continue;
+    }
+    if (text.startsWith("/image ")) {
+      const path = text.replace("/image ", "").trim();
+      if (path && fs.existsSync(path)) {
+        imagePaths.push(path);
+        console.log(color(`Attached: ${path}`, "green"));
+      } else {
+        console.log(color("Image not found.", "red"));
+      }
       continue;
     }
     if (text.startsWith("/exec ")) {
-      await handleExec(reader, settings, text.replace("/exec ", "").trim());
-      renderTips();
+      const cmd = text.replace("/exec ", "").trim();
+      if (!cmd) continue;
+      if (!settings.dangerMode && settings.approvalRequired) {
+        const allow = (await reader.question(color(`Run "${cmd}"? type yes> `, "yellow"))).trim();
+        if (allow.toLowerCase() !== "yes") {
+          console.log(color("Cancelled.", "yellow"));
+          continue;
+        }
+      }
+      console.log(color(`running: ${cmd}`, "yellow"));
+      const result = await executeShell(cmd);
+      console.log(result.code === 0 ? color(`exit=${result.code}`, "green") : color(`exit=${result.code}`, "red"));
+      if (result.output) console.log(result.output);
       continue;
     }
-    if (text === "/install") {
-      showInstall();
-      renderTips();
+    if (text === "/toggle-approvals") {
+      settings.approvalRequired = !settings.approvalRequired;
+      saveSettings(settings);
+      printHeader(settings);
+      continue;
+    }
+    if (text === "/toggle-danger") {
+      settings.dangerMode = !settings.dangerMode;
+      saveSettings(settings);
+      printHeader(settings);
+      continue;
+    }
+
+    history.push({ role: "user", text: text.slice(0, 300) });
+    console.log(color("thinking...", "magenta"));
+
+    abortRequested = false;
+    if (!(await ensureApiKey(reader, settings))) continue;
+    if (abortRequested) {
+      console.log(color("Request cancelled.", "yellow"));
       continue;
     }
 
     try {
-      const imageContext =
-        imagePaths.length > 0
-          ? `\n\nAttached image paths:\n${imagePaths.map((path) => `- ${path}`).join("\n")}`
-          : "";
-      history.push({ role: "user", text: text.slice(0, 240) });
-      const answer = await askModel(settings, `${text}${imageContext}`, repoSummary);
-      history.push({ role: "assistant", text: answer.slice(0, 240) });
-      console.log(color("\nassistant", "magenta"));
-      const suggested = extractSuggestedCommands(answer);
-      if (suggested.length > 0) {
-        console.log(color("planned/suggested commands:", "yellow"));
-        for (const command of suggested) {
+      const answer = await runModelQuery(settings, text, repoSummary, imagePaths);
+      history.push({ role: "assistant", text: answer.slice(0, 300) });
+      const commands = extractSuggestedCommands(answer);
+      if (commands.length > 0) {
+        console.log(color("planned commands:", "yellow"));
+        for (const command of commands) {
           console.log(`  ${color("›", "magenta")} ${command}`);
         }
       }
-      console.log(answer);
-      renderTips();
+      console.log(color("assistant:", "cyan"), answer);
     } catch (error) {
       if (error instanceof ModelAPIError) {
         console.log(color(`API error: ${error.message}`, "red"));
-        if (settings.provider !== "local") {
-          console.log(color("Tip: try `/provider local` or check key/quota.", "yellow"));
-        }
       } else {
-        console.log(color(`LLM request failed: ${error.message}`, "red"));
+        console.log(color(`error: ${error.message}`, "red"));
       }
-      renderTips();
     }
   }
 
   reader.close();
-}
-
-export async function run() {
-  const firstArg = process.argv[2] || "chat";
-  if (firstArg === "install") {
-    showInstall();
-    return;
-  }
-  await runChat();
 }
