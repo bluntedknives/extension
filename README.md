@@ -1,43 +1,38 @@
-# OSI CLI
+# OSI CLI (JavaScript)
 
-OSI (Operator Shell Intelligence) is a coding assistant CLI with a clean terminal UI, shell execution controls, repository awareness, and support for both local and hosted AI providers.
-
-## Highlights
-
-- `osi` command with interactive coding chat loop.
-- “Sexy/clean” terminal design using Rich tables, panels, colors, and spinner animations.
-- Providers:
-  - `local` (Ollama/OpenAI-compatible local endpoint)
-  - `codex` (OpenAI endpoint)
-  - `groq`
-  - `gemini` (OpenAI-compatible Gemini endpoint)
-  - `v0`
-- Persistent “main prompt” you can fully customize.
-- Shell execution with approval mode and optional danger mode.
-- Codebase summarization so the model can reason about your repo.
+OSI is now a Node.js CLI, so you can install once and run `osi` from any directory without Python virtualenv activation.
 
 ## Install
 
-### One command
+### One command (recommended)
 
 ```bash
 bash install_osi.sh
 ```
 
-### Manual
+### Manual global install
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
+npm install -g .
 ```
 
-Run:
+Then run from anywhere:
 
 ```bash
 osi
 ```
 
+## Features
+
+- Interactive terminal assistant for coding tasks.
+- Providers: `local`, `codex`, `groq`, `gemini`, `v0`.
+- Persistent config in `~/.osi/config.json`.
+- Prompt customization with `/prompt` and `/prompt set`.
+- Rate-limit/quota/auth detection for hosted providers.
+- Shell command execution with approval and danger modes.
+- Repo summarization context for codebase-aware responses.
+
+## Commands
 ## CLI Commands
 
 - `/help`
@@ -59,6 +54,7 @@ Also available:
 osi install
 ```
 
+## Provider keys
 ## Provider Keys
 
 Set these when using hosted providers:
@@ -68,6 +64,7 @@ Set these when using hosted providers:
 - `GEMINI_API_KEY` for `gemini`
 - `V0_API_KEY` for `v0`
 
+`local` typically uses Ollama/OpenAI-compatible local endpoints and does not require API keys.
 `local` does not require an API key.
 
 ## Default Main Prompt
