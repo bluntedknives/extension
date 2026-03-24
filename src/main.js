@@ -7,11 +7,14 @@ import { summarizeRepo } from "./codebase.js";
 import { loadSettings, saveSettings } from "./config.js";
 import { executeShell } from "./shell-tools.js";
 
-const logo = `
-  ▄▄▄   ▄▄▄ ▄
-█   █ ▀▄▄  ▄
-▀▄▄▄▀ ▄▄▄▀ █
-          █
+const BANNER = `
+ ▄▄▄   ▄▄▄ ▄ 
+█   █ ▀▄▄  ▄ 
+▀▄▄▄▀ ▄▄▄▀ █ 
+           █ 
+             
+             
+             
 `;
 
 const colors = {
