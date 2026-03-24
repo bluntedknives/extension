@@ -1,36 +1,30 @@
-# LocalCoder CLI
+# OSI CLI
 
-A local-first coding assistant CLI inspired by tools like Codex CLI and Gemini CLI.
+OSI (Operator Shell Intelligence) is a coding assistant CLI with a clean terminal UI, shell execution controls, repository awareness, and support for both local and hosted AI providers.
 
-## What this project does
+## Highlights
 
-- Runs **locally** on your machine.
-- Connects to a **local LLM server** (Ollama by default).
-- Gives you an interactive CLI with:
-  - ASCII splash banner
-  - command palette (`/help`, `/model`, `/approve`, `/codebase`, etc.)
-  - shell/tool execution with permission gates
-  - repository context summaries for coding tasks
-- Lets you provide your own **persistent instruction prompt** to "train behavior" (instruction tuning by prompt, not weight training).
+- `osi` command with interactive coding chat loop.
+- “Sexy/clean” terminal design using Rich tables, panels, colors, and spinner animations.
+- Providers:
+  - `local` (Ollama/OpenAI-compatible local endpoint)
+  - `codex` (OpenAI endpoint)
+  - `groq`
+  - `gemini` (OpenAI-compatible Gemini endpoint)
+  - `v0`
+- Persistent “main prompt” you can fully customize.
+- Shell execution with approval mode and optional danger mode.
+- Codebase summarization so the model can reason about your repo.
 
-> Note: true model training/fine-tuning requires substantial compute and data pipelines. This starter focuses on practical local usage and behavior customization.
+## Install
 
----
-
-## Quick start
-
-### 1) Install prerequisites
-
-- Python 3.11+
-- [Ollama](https://ollama.com/) (or another OpenAI-compatible local endpoint)
-
-### 2) Pull a local model
+### One command
 
 ```bash
-ollama pull qwen2.5-coder:7b
+bash install_osi.sh
 ```
 
-### 3) Install this CLI
+### Manual
 
 ```bash
 python -m venv .venv
@@ -38,85 +32,56 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-### 4) Run
+Run:
 
 ```bash
-localcoder
+osi
 ```
 
----
+## CLI Commands
 
-## Commands
+- `/help`
+- `/provider <local|codex|groq|gemini|v0>`
+- `/model <name>`
+- `/endpoint <url>`
+- `/prompt`
+- `/prompt set <text>`
+- `/approve on|off`
+- `/danger on|off`
+- `/codebase`
+- `/exec <cmd>`
+- `/install`
+- `/exit`
 
-- `/help` – show commands
-- `/model <name>` – switch local model
-- `/prompt` – view current persistent prompt
-- `/prompt set <text>` – replace persistent prompt
-- `/approve on|off` – require approval before shell commands
-- `/danger on|off` – allow unrestricted shell commands without confirmations
-- `/codebase` – summarize key files in current repo
-- `/exec <cmd>` – run shell command
-- `/exit` – quit
+Also available:
 
----
+```bash
+osi install
+```
 
-## Configuration
+## Provider Keys
 
-The CLI stores config at:
+Set these when using hosted providers:
 
-- `~/.localcoder/config.json`
+- `OPENAI_API_KEY` for `codex`
+- `GROQ_API_KEY` for `groq`
+- `GEMINI_API_KEY` for `gemini`
+- `V0_API_KEY` for `v0`
 
-Defaults:
+`local` does not require an API key.
 
-- backend: Ollama-compatible
-- endpoint: `http://127.0.0.1:11434/v1/chat/completions`
-- model: `qwen2.5-coder:7b`
-- approval mode: `on`
-- danger mode: `off`
+## Default Main Prompt
 
----
+The default persistent prompt is set to your requested OSI-style system prompt and can be changed with:
 
-## Safety model
+```bash
+/prompt set <new prompt text>
+```
 
-- Approval mode (`/approve on`) prompts you before shell execution.
-- Danger mode (`/danger on`) skips confirmation and can execute any command.
-- Keep danger mode off unless you trust your prompt and environment.
+## Config File
 
----
+Saved at:
 
-## How to “train” behavior locally
+- `~/.osi/config.json`
 
-You have 3 layers:
-
-1. **Persistent instruction prompt** (`/prompt set ...`)
-2. **Project guidance file** (e.g., `AGENTS.md`, `CONTRIBUTING.md`)
-3. **Optional fine-tuned model** served locally (outside this repo)
-
-For most use cases, (1) + (2) gives strong control without heavy training infrastructure.
-
----
-
-## Architecture
-
-- `src/localcoder_cli/main.py`
-  - command loop + UX + orchestration
-- `src/localcoder_cli/config.py`
-  - persisted settings
-- `src/localcoder_cli/backend.py`
-  - local model client (Ollama/OpenAI-compatible)
-- `src/localcoder_cli/codebase.py`
-  - lightweight repo context extraction
-- `src/localcoder_cli/shell_tools.py`
-  - gated shell execution
-
----
-
-## Disclaimer
-
-This is a starter implementation. For production-grade autonomy, add:
-
-- sandboxing/containers per task
-- policy engine for file/network scopes
-- audit logs and replay
-- model routing and eval harness
-- stronger prompt injection defenses
+It stores provider, endpoint, model, permissions, and prompt.
