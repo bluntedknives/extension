@@ -8,10 +8,13 @@ import { loadSettings, saveSettings } from "./config.js";
 import { executeShell } from "./shell-tools.js";
 
 const LOGO = `
-  ▄▄▄   ▄▄▄ ▄
-█   █ ▀▄▄  ▄
-▀▄▄▄▀ ▄▄▄▀ █
-          █
+ ▄▄▄   ▄▄▄ ▄ 
+█   █ ▀▄▄  ▄ 
+▀▄▄▄▀ ▄▄▄▀ █ 
+           █ 
+             
+             
+             
 `;
 
 const colors = {
