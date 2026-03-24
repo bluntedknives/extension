@@ -7,7 +7,7 @@ import { summarizeRepo } from "./codebase.js";
 import { loadSettings, saveSettings } from "./config.js";
 import { executeShell } from "./shell-tools.js";
 
-const BANNER = `
+const LOGO = `
  ▄▄▄   ▄▄▄ ▄ 
 █   █ ▀▄▄  ▄ 
 ▀▄▄▄▀ ▄▄▄▀ █ 
@@ -51,7 +51,8 @@ function color(text, tone) {
 
 function printHeader(settings) {
   console.clear();
-  console.log(color(logo, "magenta"));
+  const safeLogo = typeof LOGO === "string" && LOGO.length > 0 ? LOGO : "> OSI";
+  console.log(color(safeLogo, "magenta"));
   console.log(
     `${color("provider", "blue")}:${settings.provider} ` +
       `${color("model", "blue")}:${settings.model} ` +
@@ -133,6 +134,7 @@ export async function run() {
   }
 
   const reader = readline.createInterface({ input, output });
+  let shouldExit = false;
   const settings = loadSettings();
   const history = [];
   const imagePaths = [];
@@ -143,12 +145,28 @@ export async function run() {
     abortRequested = true;
     console.log(color("\nAbort requested. Request will be skipped before send.", "yellow"));
   });
+  reader.on("SIGINT", () => {
+    shouldExit = true;
+    console.log(color("\nExiting OSI...", "yellow"));
+    reader.close();
+  });
 
   printHeader(settings);
 
   while (true) {
-    const text = (await reader.question(color("\nosi> ", "blue"))).trim();
-    if (!text) continue;
+    if (shouldExit) break;
+    let text = "";
+    try {
+      text = (await reader.question(color("\nosi> ", "blue"))).trim();
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        shouldExit = true;
+        break;
+      }
+      throw error;
+    }
+    try {
+      if (!text) continue;
 
     if (text === "/exit") break;
     if (text === "/clear") {
@@ -324,33 +342,40 @@ export async function run() {
       continue;
     }
 
-    history.push({ role: "user", text: text.slice(0, 300) });
-    console.log(color("thinking...", "magenta"));
+      history.push({ role: "user", text: text.slice(0, 300) });
+      console.log(color("thinking...", "magenta"));
 
-    abortRequested = false;
-    if (!(await ensureApiKey(reader, settings))) continue;
-    if (abortRequested) {
-      console.log(color("Request cancelled.", "yellow"));
-      continue;
-    }
+      abortRequested = false;
+      if (!(await ensureApiKey(reader, settings))) continue;
+      if (abortRequested) {
+        console.log(color("Request cancelled.", "yellow"));
+        continue;
+      }
 
-    try {
-      const answer = await runModelQuery(settings, text, repoSummary, imagePaths);
-      history.push({ role: "assistant", text: answer.slice(0, 300) });
-      const commands = extractSuggestedCommands(answer);
-      if (commands.length > 0) {
-        console.log(color("planned commands:", "yellow"));
-        for (const command of commands) {
-          console.log(`  ${color("›", "magenta")} ${command}`);
+      try {
+        const answer = await runModelQuery(settings, text, repoSummary, imagePaths);
+        history.push({ role: "assistant", text: answer.slice(0, 300) });
+        const commands = extractSuggestedCommands(answer);
+        if (commands.length > 0) {
+          console.log(color("planned commands:", "yellow"));
+          for (const command of commands) {
+            console.log(`  ${color("›", "magenta")} ${command}`);
+          }
+        }
+        console.log(color("assistant:", "cyan"), answer);
+      } catch (error) {
+        if (error instanceof ModelAPIError) {
+          console.log(color(`API error: ${error.message}`, "red"));
+        } else {
+          console.log(color(`error: ${error.message}`, "red"));
         }
       }
-      console.log(color("assistant:", "cyan"), answer);
     } catch (error) {
-      if (error instanceof ModelAPIError) {
-        console.log(color(`API error: ${error.message}`, "red"));
-      } else {
-        console.log(color(`error: ${error.message}`, "red"));
+      if (error?.name === "AbortError") {
+        shouldExit = true;
+        break;
       }
+      throw error;
     }
   }
 
