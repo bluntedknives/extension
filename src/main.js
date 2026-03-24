@@ -1,34 +1,80 @@
 import process from "node:process";
+import fs from "node:fs";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import chalk from "chalk";
-import ora from "ora";
 import { ModelAPIError, ModelClient, PROVIDERS } from "./backend.js";
 import { summarizeRepo } from "./codebase.js";
 import { loadSettings, saveSettings } from "./config.js";
 import { executeShell } from "./shell-tools.js";
 
 const BANNER = `
-   ____   _____   _____
-  / __ \\ / ____| |_   _|
- | |  | | (___     | |    OSI CLI
- | |  | |\\___ \\    | |    Operator Shell Intelligence
- | |__| |____) |  _| |_   Code. Build. Automate.
-  \\____/|_____/  |_____|
+ ▄▄▄   ▄▄▄ ▄ 
+█   █ ▀▄▄  ▄ 
+▀▄▄▄▀ ▄▄▄▀ █ 
+           █ 
+             
+             
+             
 `;
 
+const colors = {
+  reset: "\x1b[0m",
+  red: "\x1b[31m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  cyan: "\x1b[36m",
+  magenta: "\x1b[35m",
+  white: "\x1b[37m"
+};
+
+function color(text, colorName) {
+  return `${colors[colorName]}${text}${colors.reset}`;
+}
+
+function gradientLine(text) {
+  const palette = ["magenta", "magenta", "white", "white"];
+  return text
+    .split("")
+    .map((char, index) => color(char, palette[index % palette.length]))
+    .join("");
+}
+
+function startSpinner(label) {
+  const frames = ["-", "\\", "|", "/"];
+  let index = 0;
+  const timer = setInterval(() => {
+    process.stdout.write(`\r${frames[index % frames.length]} ${label}`);
+    index += 1;
+  }, 90);
+  return {
+    succeed(doneLabel = "Done") {
+      clearInterval(timer);
+      process.stdout.write(`\r${color(`✓ ${doneLabel}`, "green")}\n`);
+    },
+    fail(doneLabel = "Failed") {
+      clearInterval(timer);
+      process.stdout.write(`\r${color(`✗ ${doneLabel}`, "red")}\n`);
+    },
+    stop() {
+      clearInterval(timer);
+      process.stdout.write("\r");
+    }
+  };
+}
+
 function printSession(settings) {
-  console.log(chalk.magenta(BANNER));
-  console.log(chalk.cyan("Session"));
-  console.log(`  Provider: ${chalk.white(settings.provider)}`);
-  console.log(`  Model:    ${chalk.white(settings.model)}`);
-  console.log(`  Endpoint: ${chalk.white(settings.endpoint)}`);
-  console.log(`  Approvals:${chalk.white(settings.approvalRequired ? "on" : "off")}`);
-  console.log(`  Danger:   ${chalk.white(settings.dangerMode ? "on" : "off")}`);
+  console.log(gradientLine(BANNER));
+  console.log(color("osi cli • compact mode", "cyan"));
+  console.log(
+    `${color("provider", "magenta")}:${settings.provider}  ` +
+      `${color("model", "magenta")}:${settings.model}  ` +
+      `${color("approvals", "magenta")}:${settings.approvalRequired ? "on" : "off"}  ` +
+      `${color("danger", "magenta")}:${settings.dangerMode ? "on" : "off"}`
+  );
 }
 
 function printHelp() {
-  console.log(chalk.magenta("\nOSI Commands"));
+  console.log(color("\nOSI Commands", "magenta"));
   console.log("  /help");
   console.log("  /provider <local|codex|groq|gemini|v0>");
   console.log("  /model <name>");
@@ -38,14 +84,17 @@ function printHelp() {
   console.log("  /approve on|off");
   console.log("  /danger on|off");
   console.log("  /codebase");
+  console.log("  /history");
+  console.log("  /paste");
+  console.log("  /image <path>");
   console.log("  /exec <cmd>");
   console.log("  /install");
   console.log("  /exit");
 }
 
 function showInstall() {
-  console.log(chalk.green("\nInstall OSI"));
-  console.log("  npm install -g osi-cli");
+  console.log(color("\nInstall OSI", "green"));
+  console.log("  npm install -g .");
   console.log("  osi");
 }
 
@@ -55,7 +104,7 @@ async function confirmPrompt(reader, promptText) {
 }
 
 async function askModel(settings, userText, repoSummary) {
-  const spinner = ora("Thinking...").start();
+  const spinner = startSpinner("Thinking...");
   try {
     const client = ModelClient.fromSettings(settings);
     const answer = await client.chat([
@@ -76,21 +125,51 @@ async function askModel(settings, userText, repoSummary) {
   }
 }
 
+function renderTips() {
+  const tips =
+    `${color("tips", "magenta")}  ` +
+    "Ctrl+C exit  •  Ctrl+Z blocked  •  native Ctrl+V paste  •  /paste multiline  •  /image path";
+  console.log(color("─".repeat(Math.min(process.stdout.columns || 80, 80)), "white"));
+  console.log(color(tips, "cyan"));
+}
+
+function extractSuggestedCommands(text) {
+  const matches = text.match(/```(?:bash|sh)?\n([\s\S]*?)```/g) || [];
+  return matches
+    .map((block) => block.replace(/```(?:bash|sh)?\n?/g, "").replace(/```/g, "").trim())
+    .filter(Boolean)
+    .flatMap((chunk) => chunk.split("\n").map((line) => line.trim()).filter(Boolean))
+    .slice(0, 5);
+}
+
+async function captureMultiline(reader) {
+  console.log(color("Paste mode: end with a single '.' line", "yellow"));
+  const lines = [];
+  while (true) {
+    const line = await reader.question("");
+    if (line.trim() === ".") {
+      break;
+    }
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
 async function handleExec(reader, settings, command) {
   if (!settings.dangerMode && settings.approvalRequired) {
     const ok = await confirmPrompt(reader, `Execute command? ${command}`);
     if (!ok) {
-      console.log(chalk.yellow("Cancelled."));
+      console.log(color("Cancelled.", "yellow"));
       return;
     }
   }
-  const spinner = ora("Running shell command...").start();
+  const spinner = startSpinner("Running shell command...");
   const result = await executeShell(command);
   spinner.stop();
   if (result.code === 0) {
-    console.log(chalk.green(`exit=${result.code}`));
+    console.log(color(`exit=${result.code}`, "green"));
   } else {
-    console.log(chalk.red(`exit=${result.code}`));
+    console.log(color(`exit=${result.code}`, "red"));
   }
   if (result.output) {
     console.log(result.output);
@@ -101,12 +180,20 @@ async function runChat() {
   const reader = readline.createInterface({ input, output });
   const settings = loadSettings();
   let repoSummary = summarizeRepo(process.cwd());
+  const history = [];
+  const imagePaths = [];
+
+  process.on("SIGTSTP", () => {
+    console.log(color("\nCtrl+Z intercepted. Use /exit to quit OSI.", "yellow"));
+    renderTips();
+  });
 
   printSession(settings);
   printHelp();
+  renderTips();
 
   while (true) {
-    const text = (await reader.question(chalk.cyan("\nosi> "))).trim();
+    const text = (await reader.question(color("\nosi> ", "cyan"))).trim();
     if (!text) {
       continue;
     }
@@ -115,85 +202,149 @@ async function runChat() {
     }
     if (text === "/help") {
       printHelp();
+      renderTips();
+      continue;
+    }
+    if (text === "/history") {
+      const recent = history.slice(-12);
+      if (recent.length === 0) {
+        console.log(color("No history yet.", "yellow"));
+      } else {
+        for (const entry of recent) {
+          console.log(`${color(`[${entry.role}]`, "magenta")} ${entry.text}`);
+        }
+      }
+      renderTips();
+      continue;
+    }
+    if (text === "/paste") {
+      const pasted = await captureMultiline(reader);
+      if (!pasted) {
+        console.log(color("No pasted content captured.", "yellow"));
+        renderTips();
+        continue;
+      }
+      history.push({ role: "user", text: pasted.slice(0, 240) });
+      const answer = await askModel(settings, pasted, repoSummary);
+      history.push({ role: "assistant", text: answer.slice(0, 240) });
+      console.log(color("\nassistant", "magenta"));
+      console.log(answer);
+      renderTips();
+      continue;
+    }
+    if (text.startsWith("/image ")) {
+      const imagePath = text.replace("/image ", "").trim();
+      if (!fs.existsSync(imagePath)) {
+        console.log(color(`Image path not found: ${imagePath}`, "red"));
+      } else {
+        imagePaths.push(imagePath);
+        console.log(color(`Attached image path: ${imagePath}`, "green"));
+      }
+      renderTips();
       continue;
     }
     if (text.startsWith("/provider ")) {
       const provider = text.split(" ", 2)[1]?.trim().toLowerCase();
       if (!PROVIDERS[provider]) {
-        console.log(chalk.red(`Unknown provider: ${provider}`));
+        console.log(color(`Unknown provider: ${provider}`, "red"));
         continue;
       }
       settings.provider = provider;
       settings.endpoint = PROVIDERS[provider].endpoint;
       saveSettings(settings);
-      console.log(chalk.green(`Provider set to ${provider}. Endpoint reset.`));
+      console.log(color(`Provider set to ${provider}. Endpoint reset.`, "green"));
+      renderTips();
       continue;
     }
     if (text.startsWith("/model ")) {
       settings.model = text.split(" ", 2)[1]?.trim();
       saveSettings(settings);
-      console.log(chalk.green(`Model set to ${settings.model}`));
+      console.log(color(`Model set to ${settings.model}`, "green"));
+      renderTips();
       continue;
     }
     if (text.startsWith("/endpoint ")) {
       settings.endpoint = text.split(" ", 2)[1]?.trim();
       saveSettings(settings);
-      console.log(chalk.green(`Endpoint set to ${settings.endpoint}`));
+      console.log(color(`Endpoint set to ${settings.endpoint}`, "green"));
+      renderTips();
       continue;
     }
     if (text === "/prompt") {
       console.log(settings.persistentPrompt);
+      renderTips();
       continue;
     }
     if (text.startsWith("/prompt set ")) {
       settings.persistentPrompt = text.replace("/prompt set ", "").trim();
       saveSettings(settings);
-      console.log(chalk.green("Prompt updated."));
+      console.log(color("Prompt updated.", "green"));
+      renderTips();
       continue;
     }
     if (text.startsWith("/approve ")) {
       const value = text.split(" ", 2)[1]?.trim().toLowerCase();
       settings.approvalRequired = value === "on";
       saveSettings(settings);
-      console.log(chalk.green(`Approval mode: ${value}`));
+      console.log(color(`Approval mode: ${value}`, "green"));
+      renderTips();
       continue;
     }
     if (text.startsWith("/danger ")) {
       const value = text.split(" ", 2)[1]?.trim().toLowerCase();
       settings.dangerMode = value === "on";
       saveSettings(settings);
-      console.log(chalk.yellow(`Danger mode: ${value}`));
+      console.log(color(`Danger mode: ${value}`, "yellow"));
+      renderTips();
       continue;
     }
     if (text === "/codebase") {
-      const spinner = ora("Scanning codebase...").start();
+      const spinner = startSpinner("Scanning codebase...");
       repoSummary = summarizeRepo(process.cwd());
       spinner.succeed("Done");
       console.log(repoSummary);
+      renderTips();
       continue;
     }
     if (text.startsWith("/exec ")) {
       await handleExec(reader, settings, text.replace("/exec ", "").trim());
+      renderTips();
       continue;
     }
     if (text === "/install") {
       showInstall();
+      renderTips();
       continue;
     }
 
     try {
-      const answer = await askModel(settings, text, repoSummary);
-      console.log(chalk.magenta("\nassistant"));
+      const imageContext =
+        imagePaths.length > 0
+          ? `\n\nAttached image paths:\n${imagePaths.map((path) => `- ${path}`).join("\n")}`
+          : "";
+      history.push({ role: "user", text: text.slice(0, 240) });
+      const answer = await askModel(settings, `${text}${imageContext}`, repoSummary);
+      history.push({ role: "assistant", text: answer.slice(0, 240) });
+      console.log(color("\nassistant", "magenta"));
+      const suggested = extractSuggestedCommands(answer);
+      if (suggested.length > 0) {
+        console.log(color("planned/suggested commands:", "yellow"));
+        for (const command of suggested) {
+          console.log(`  ${color("›", "magenta")} ${command}`);
+        }
+      }
       console.log(answer);
+      renderTips();
     } catch (error) {
       if (error instanceof ModelAPIError) {
-        console.log(chalk.red(`API error: ${error.message}`));
+        console.log(color(`API error: ${error.message}`, "red"));
         if (settings.provider !== "local") {
-          console.log(chalk.yellow("Tip: try `/provider local` or check key/quota."));
+          console.log(color("Tip: try `/provider local` or check key/quota.", "yellow"));
         }
       } else {
-        console.log(chalk.red(`LLM request failed: ${error.message}`));
+        console.log(color(`LLM request failed: ${error.message}`, "red"));
       }
+      renderTips();
     }
   }
 
