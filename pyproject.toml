@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "localcoder-cli"
+name = "osi-cli"
 version = "0.1.0"
-description = "Local coding assistant CLI with shell permissions and codebase awareness"
+description = "OSI: local and cloud coding assistant CLI with shell permissions and codebase awareness"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-localcoder = "localcoder_cli.main:run"
+osi = "osi.main:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
