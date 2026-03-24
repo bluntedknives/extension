@@ -1,0 +1,16 @@
+{
+  "name": "osi-cli",
+  "version": "0.2.0",
+  "description": "OSI: coding assistant CLI for local and hosted AI providers",
+  "type": "module",
+  "bin": {
+    "osi": "./bin/osi.js"
+  },
+  "scripts": {
+    "start": "node ./bin/osi.js",
+    "check": "node --check ./bin/osi.js && node --check ./src/main.js && node --check ./src/backend.js && node --check ./src/config.js && node --check ./src/codebase.js && node --check ./src/shell-tools.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
